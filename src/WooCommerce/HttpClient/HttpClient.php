@@ -185,7 +185,7 @@ class HttpClient
      */
     protected function setupMethod($method)
     {
-        if ('POST' == $method) {
+        if (\in_array($method, ['POST', 'UPLOAD'])) {
             \curl_setopt($this->ch, CURLOPT_POST, true);
         } elseif (\in_array($method, ['PUT', 'DELETE', 'OPTIONS'])) {
             \curl_setopt($this->ch, CURLOPT_CUSTOMREQUEST, $method);
@@ -214,6 +214,20 @@ class HttpClient
     }
 
     /**
+     * Check if image/file exists on a remote URL
+     * @param string $url
+     * @return boolean
+     */
+    public function urlExists(string $url) {
+        $headers = @get_headers($url);
+        if ($headers) {
+            return stripos($headers[0], "200 OK") ? true : false;
+        } else {
+            return false;
+        }
+    }
+    
+    /**
      * Create request.
      *
      * @param string $endpoint   Request endpoint.
@@ -228,30 +242,64 @@ class HttpClient
         $body    = '';
         $url     = $this->url . $endpoint;
         $hasData = !empty($data);
+        $methodConv = ($method == 'UPLOAD') ? 'POST' : $method;
 
         // Setup authentication.
-        $parameters = $this->authenticate($url, $method, $parameters);
+        $parameters = $this->authenticate($url, $methodConv, $parameters);
 
         // Setup method.
         $this->setupMethod($method);
 
         // Include post fields.
         if ($hasData) {
-            $body = \json_encode($data);
+            if($method == 'UPLOAD'){
+                if(!$this->urlExists($data)){
+                    throw new HttpClientException("Requested file/URL $url is not accessible.", 0,  new Request(), new Response());
+                }
+                $fileName = \basename(\parse_url($data, PHP_URL_PATH));
+                $body = \file_get_contents($data);
+            }else{
+                $body = \json_encode($data);
+            }
             \curl_setopt($this->ch, CURLOPT_POSTFIELDS, $body);
         }
 
+        if($method == 'UPLOAD'){
+            $headers = $this->getRequestUploadHeaders($fileName, $body);
+        }else{
+            $headers = $this->getRequestHeaders($hasData);
+        }
+        
         $this->request = new Request(
             $this->buildUrlQuery($url, $parameters),
-            $method,
+            $methodConv,
             $parameters,
-            $this->getRequestHeaders($hasData),
+            $headers,
             $body
         );
 
         return $this->getRequest();
     }
 
+    /**
+     * Headers for file upload
+     * @param string $fileName
+     * @param string $fileContent
+     * @return array
+     */
+    protected function getRequestUploadHeaders($fileName, $fileContent){
+        $finfo = new \finfo(FILEINFO_MIME_TYPE);
+        $contentType = $finfo->buffer($fileContent);
+        
+        $headers = [
+            'User-Agent' => $this->options->userAgent() . '/' . Client::VERSION,
+            'Content-Disposition: form-data; filename="'.$fileName.'"',
+            'Content-Type: '.($contentType !== false ? $contentType : 'application/octet-stream'),
+            'Content-Length: '.strlen($fileContent)
+        ];
+        return $headers;
+    }
+    
     /**
      * Get response headers.
      *
@@ -276,7 +324,7 @@ class HttpClient
 
         return $headers;
     }
-
+    
     /**
      * Create response.
      *

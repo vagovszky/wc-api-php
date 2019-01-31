@@ -106,4 +106,17 @@ class Client
     {
         return $this->http->request($endpoint, 'OPTIONS', [], []);
     }
+    
+    /**
+     * Upload file from URL
+     * 
+     * @param string $endpoint
+     * @param string $url
+     * 
+     * @return array
+     */
+    public function upload($endpoint, $url)
+    {
+        return $this->http->request($endpoint, 'UPLOAD', $url);
+    }
 }
