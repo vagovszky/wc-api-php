@@ -243,6 +243,7 @@ class HttpClient
         $url     = $this->url . $endpoint;
         $hasData = !empty($data);
         $methodConv = ($method == 'UPLOAD') ? 'POST' : $method;
+        $headers = [];
 
         // Setup authentication.
         $parameters = $this->authenticate($url, $methodConv, $parameters);
@@ -254,19 +255,18 @@ class HttpClient
         if ($hasData) {
             if($method == 'UPLOAD'){
                 if(!$this->urlExists($data)){
-                    throw new HttpClientException("Requested file/URL $url is not accessible.", 0,  new Request(), new Response());
+                    throw new HttpClientException("Requested URL $data does not exists.", 0,  new Request(), new Response());
                 }
                 $fileName = \basename(\parse_url($data, PHP_URL_PATH));
                 $body = \file_get_contents($data);
+                $headers = $this->getRequestUploadHeaders($fileName, $body);
             }else{
                 $body = \json_encode($data);
             }
             \curl_setopt($this->ch, CURLOPT_POSTFIELDS, $body);
         }
 
-        if($method == 'UPLOAD'){
-            $headers = $this->getRequestUploadHeaders($fileName, $body);
-        }else{
+        if($method != 'UPLOAD' || empty($headers)){
             $headers = $this->getRequestHeaders($hasData);
         }
         
@@ -293,9 +293,9 @@ class HttpClient
         
         $headers = [
             'User-Agent' => $this->options->userAgent() . '/' . Client::VERSION,
-            'Content-Disposition: form-data; filename="'.$fileName.'"',
-            'Content-Type: '.($contentType !== false ? $contentType : 'application/octet-stream'),
-            'Content-Length: '.strlen($fileContent)
+            'Content-Disposition' => 'form-data; filename="'.$fileName.'"',
+            'Content-Type' => ($contentType !== false ? $contentType : 'application/octet-stream'),
+            'Content-Length' => strlen($fileContent)
         ];
         return $headers;
     }
